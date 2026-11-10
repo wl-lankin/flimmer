@@ -16,10 +16,12 @@ use objc2_app_kit::{NSAutoresizingMaskOptions, NSView, NSWindowOrderingMode};
 use objc2_quartz_core::{CALayer, CAOpenGLLayer};
 
 use crate::mpv::ffi::{
-    mpv_render_context, mpv_render_context_create, mpv_render_context_render, mpv_render_context_report_swap,
-    mpv_render_context_set_update_callback, mpv_render_context_update, mpv_render_param as RenderParam,
+    mpv_render_context, mpv_render_context_create, mpv_render_context_render,
+    mpv_render_context_report_swap, mpv_render_context_set_update_callback,
+    mpv_render_context_update, mpv_render_param as RenderParam,
     MPV_RENDER_PARAM_API_TYPE as PARAM_API_TYPE, MPV_RENDER_PARAM_FLIP_Y as PARAM_FLIP_Y,
-    MPV_RENDER_PARAM_OPENGL_FBO as PARAM_OPENGL_FBO, MPV_RENDER_PARAM_OPENGL_INIT_PARAMS as PARAM_OPENGL_INIT_PARAMS,
+    MPV_RENDER_PARAM_OPENGL_FBO as PARAM_OPENGL_FBO,
+    MPV_RENDER_PARAM_OPENGL_INIT_PARAMS as PARAM_OPENGL_INIT_PARAMS,
     MPV_RENDER_UPDATE_FRAME as UPDATE_FRAME,
 };
 use crate::mpv::Mpv;
@@ -46,8 +48,16 @@ const GL_VIEWPORT: u32 = 0x0BA2;
 
 #[link(name = "OpenGL", kind = "framework")]
 extern "C" {
-    fn CGLChoosePixelFormat(attribs: *const c_int, pix: *mut CGLPixelFormatObj, npix: *mut c_int) -> c_int;
-    fn CGLCreateContext(pix: CGLPixelFormatObj, share: CGLContextObj, ctx: *mut CGLContextObj) -> c_int;
+    fn CGLChoosePixelFormat(
+        attribs: *const c_int,
+        pix: *mut CGLPixelFormatObj,
+        npix: *mut c_int,
+    ) -> c_int;
+    fn CGLCreateContext(
+        pix: CGLPixelFormatObj,
+        share: CGLContextObj,
+        ctx: *mut CGLContextObj,
+    ) -> c_int;
     fn CGLRetainPixelFormat(pix: CGLPixelFormatObj) -> CGLPixelFormatObj;
     fn CGLRetainContext(ctx: CGLContextObj) -> CGLContextObj;
     fn CGLSetCurrentContext(ctx: CGLContextObj) -> c_int;
@@ -155,8 +165,17 @@ fn create_gl() -> Result<()> {
     const ALLOW_OFFLINE: c_int = 96;
     const AUTO_SWITCHING: c_int = 101;
     let attribs = [
-        OPENGL_PROFILE, PROFILE_3_2_CORE, ACCELERATED, DOUBLE_BUFFER, COLOR_SIZE, 24, ALPHA_SIZE, 8, ALLOW_OFFLINE,
-        AUTO_SWITCHING, 0,
+        OPENGL_PROFILE,
+        PROFILE_3_2_CORE,
+        ACCELERATED,
+        DOUBLE_BUFFER,
+        COLOR_SIZE,
+        24,
+        ALPHA_SIZE,
+        8,
+        ALLOW_OFFLINE,
+        AUTO_SWITCHING,
+        0,
     ];
     let mut pix: CGLPixelFormatObj = ptr::null_mut();
     let mut count = 0;
@@ -177,11 +196,23 @@ fn create_gl() -> Result<()> {
 
 fn create_render_context(player: &Mpv) -> Result<()> {
     let api = c"opengl";
-    let mut init = GlInitParams { get_proc_address, ctx: ptr::null_mut() };
+    let mut init = GlInitParams {
+        get_proc_address,
+        ctx: ptr::null_mut(),
+    };
     let mut params = [
-        RenderParam { kind: PARAM_API_TYPE, data: api.as_ptr() as *mut c_void },
-        RenderParam { kind: PARAM_OPENGL_INIT_PARAMS, data: (&mut init as *mut GlInitParams).cast() },
-        RenderParam { kind: 0, data: ptr::null_mut() },
+        RenderParam {
+            kind: PARAM_API_TYPE,
+            data: api.as_ptr() as *mut c_void,
+        },
+        RenderParam {
+            kind: PARAM_OPENGL_INIT_PARAMS,
+            data: (&mut init as *mut GlInitParams).cast(),
+        },
+        RenderParam {
+            kind: 0,
+            data: ptr::null_mut(),
+        },
     ];
     let mut render: *mut mpv_render_context = ptr::null_mut();
     // SAFETY: our GL context is current on this thread; params are terminated.
@@ -201,7 +232,8 @@ fn create_render_context(player: &Mpv) -> Result<()> {
 
 /// Puts a layer-hosting view with the video layer below the webview of `window`.
 pub fn attach(window: &tauri::WebviewWindow, player: &Mpv) -> Result<()> {
-    let mtm = MainThreadMarker::new().ok_or_else(|| anyhow::anyhow!("video view must be made on the main thread"))?;
+    let mtm = MainThreadMarker::new()
+        .ok_or_else(|| anyhow::anyhow!("video view must be made on the main thread"))?;
     create_gl()?;
     create_render_context(player)?;
 
@@ -222,7 +254,9 @@ pub fn attach(window: &tauri::WebviewWindow, player: &Mpv) -> Result<()> {
     let view = NSView::initWithFrame(mtm.alloc::<NSView>(), content.bounds());
     view.setLayer(Some(&layer));
     view.setWantsLayer(true);
-    view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable);
+    view.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
     content.addSubview_positioned_relativeTo(&view, NSWindowOrderingMode::Below, None);
     // The window owns the view from here on; the layer lives as long as the view.
     std::mem::forget(view);

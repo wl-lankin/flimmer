@@ -1,0 +1,71 @@
+# Builds Flimmer's LGPL libmpv for macOS (universal) and fetches the pinned Windows build, checks
+# both and uploads them as artifacts of the calling run: libmpv-macos (libmpv.2.dylib, include)
+# and libmpv-windows (libmpv-2.dll). The macOS build is cached by the hash of the scripts that
+# make it, so a normal run restores the cache and re-runs the check.
+
+name: libmpv
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: mpv-build/out/universal
+          key: libmpv-macos-${{ hashFiles('scripts/libmpv-config.sh', 'scripts/build-libmpv-macos.sh') }}
+
+      - name: Build tools
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          brew install ninja cmake nasm pkgconf
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install meson glad2 jinja2
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
+      - name: Build libmpv (universal)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-libmpv-macos.sh universal
+
+      - name: Check
+        run: bash scripts/check-libmpv-macos.sh mpv-build/out/universal/libmpv.2.dylib
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libmpv-macos
+          path: mpv-build/out/universal
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the download
+        uses: actions/cache@v4
+        with:
+          path: mpv-build/dl
+          key: libmpv-windows-${{ hashFiles('scripts/libmpv-config.sh') }}
+
+      - name: Fetch libmpv for Windows
+        run: |
+          bash scripts/fetch-libmpv-windows.sh
+          strings -a mpv-build/out/windows/libmpv-2.dll | grep -q -- "-Dgpl=false"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libmpv-windows
+          path: mpv-build/out/windows/libmpv-2.dll
+          if-no-files-found: error
+          retention-days: 7

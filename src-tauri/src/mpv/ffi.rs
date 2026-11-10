@@ -116,7 +116,8 @@ pub const MPV_RENDER_PARAM_SW_STRIDE: c_int = 19;
 pub const MPV_RENDER_PARAM_SW_POINTER: c_int = 20;
 pub const MPV_RENDER_UPDATE_FRAME: u64 = 1;
 
-#[cfg_attr(target_os = "windows", link(name = "mpv", kind = "dylib"))]
+// Windows binds libmpv-2.dll directly (raw-dylib), so no import library is needed.
+#[cfg_attr(target_os = "windows", link(name = "libmpv-2", kind = "raw-dylib"))]
 #[cfg_attr(not(target_os = "windows"), link(name = "mpv"))]
 extern "C" {
     pub fn mpv_client_api_version() -> std::os::raw::c_ulong;
@@ -125,24 +126,48 @@ extern "C" {
     pub fn mpv_create() -> *mut mpv_handle;
     pub fn mpv_initialize(ctx: *mut mpv_handle) -> c_int;
     pub fn mpv_terminate_destroy(ctx: *mut mpv_handle);
-    pub fn mpv_set_option_string(ctx: *mut mpv_handle, name: *const c_char, data: *const c_char) -> c_int;
+    pub fn mpv_set_option_string(
+        ctx: *mut mpv_handle,
+        name: *const c_char,
+        data: *const c_char,
+    ) -> c_int;
     pub fn mpv_command(ctx: *mut mpv_handle, args: *mut *const c_char) -> c_int;
-    pub fn mpv_command_ret(ctx: *mut mpv_handle, args: *mut *const c_char, result: *mut mpv_node) -> c_int;
+    pub fn mpv_command_ret(
+        ctx: *mut mpv_handle,
+        args: *mut *const c_char,
+        result: *mut mpv_node,
+    ) -> c_int;
     pub fn mpv_free_node_contents(node: *mut mpv_node);
-    pub fn mpv_set_property_string(ctx: *mut mpv_handle, name: *const c_char, data: *const c_char) -> c_int;
+    pub fn mpv_set_property_string(
+        ctx: *mut mpv_handle,
+        name: *const c_char,
+        data: *const c_char,
+    ) -> c_int;
     pub fn mpv_get_property_string(ctx: *mut mpv_handle, name: *const c_char) -> *mut c_char;
-    pub fn mpv_observe_property(ctx: *mut mpv_handle, reply_userdata: u64, name: *const c_char, format: c_int) -> c_int;
+    pub fn mpv_observe_property(
+        ctx: *mut mpv_handle,
+        reply_userdata: u64,
+        name: *const c_char,
+        format: c_int,
+    ) -> c_int;
     pub fn mpv_request_log_messages(ctx: *mut mpv_handle, min_level: *const c_char) -> c_int;
     pub fn mpv_wait_event(ctx: *mut mpv_handle, timeout: f64) -> *mut mpv_event;
     pub fn mpv_wakeup(ctx: *mut mpv_handle);
-    pub fn mpv_render_context_create(res: *mut *mut mpv_render_context, mpv: *mut mpv_handle, params: *mut mpv_render_param) -> c_int;
+    pub fn mpv_render_context_create(
+        res: *mut *mut mpv_render_context,
+        mpv: *mut mpv_handle,
+        params: *mut mpv_render_param,
+    ) -> c_int;
     pub fn mpv_render_context_set_update_callback(
         ctx: *mut mpv_render_context,
         callback: Option<unsafe extern "C" fn(*mut c_void)>,
         callback_ctx: *mut c_void,
     );
     pub fn mpv_render_context_update(ctx: *mut mpv_render_context) -> u64;
-    pub fn mpv_render_context_render(ctx: *mut mpv_render_context, params: *mut mpv_render_param) -> c_int;
+    pub fn mpv_render_context_render(
+        ctx: *mut mpv_render_context,
+        params: *mut mpv_render_param,
+    ) -> c_int;
     pub fn mpv_render_context_report_swap(ctx: *mut mpv_render_context);
     pub fn mpv_render_context_free(ctx: *mut mpv_render_context);
 }

@@ -1,0 +1,79 @@
+# Tests, type checks, formatting and lints on both platforms, against the libmpv the installers
+# ship (libmpv.yml).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
+  pull_request:
+    paths-ignore: ["docs/**", "**/*.md"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  libmpv:
+    uses: ./.github/workflows/libmpv.yml
+
+  test:
+    needs: libmpv
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            artifact: libmpv-macos
+            dir: mpv-build/out/universal
+          - platform: windows-latest
+            artifact: libmpv-windows
+            dir: mpv-build/out/windows
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.dir }}
+
+      - name: Point the build at libmpv
+        shell: bash
+        run: |
+          echo "MPV_LIB_DIR=$GITHUB_WORKSPACE/${{ matrix.dir }}" >> "$GITHUB_ENV"
+          # Test binaries load libmpv-2.dll at start on Windows.
+          echo "$GITHUB_WORKSPACE/${{ matrix.dir }}" >> "$GITHUB_PATH"
+          if [ -f "${{ matrix.dir }}/libmpv.2.dylib" ]; then ln -sf libmpv.2.dylib "${{ matrix.dir }}/libmpv.dylib"; fi
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run check
+
+      # The Rust build embeds the frontend (frontendDist ../dist), so clippy and the tests need it.
+      - run: npm run build
+
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - run: cargo test --manifest-path src-tauri/Cargo.toml

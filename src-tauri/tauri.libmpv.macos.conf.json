@@ -1,0 +1,9 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "bundle": {
+    "macOS": {
+      "frameworks": ["../mpv-build/out/universal/libmpv.2.dylib"],
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}
