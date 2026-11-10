@@ -1,0 +1,19 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Flimmer",
+        "width": 1200,
+        "height": 720,
+        "minWidth": 480,
+        "minHeight": 300,
+        "center": true,
+        "transparent": true,
+        "decorations": false,
+        "backgroundColor": "#00000000",
+        "dragDropEnabled": true
+      }
+    ]
+  }
+}
