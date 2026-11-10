@@ -177,7 +177,7 @@ pub fn filmstrip(path: &str, count: usize, width: u32, mut each: impl FnMut(Stil
         }
         let mut rgb = Vec::with_capacity(w as usize * h as usize * 3);
         for row in buffer.chunks(stride).take(h as usize) {
-            for px in row[..w as usize * 4].chunks_exact(4) {
+            for px in row[..w as usize * 4].as_chunks::<4>().0 {
                 rgb.extend_from_slice(&px[..3]);
             }
         }
