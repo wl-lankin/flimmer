@@ -64,6 +64,91 @@ unsafe fn take_string(p: *mut c_char) -> Option<String> {
     Some(s)
 }
 
+/// Reads screenshot-raw's map (w, h, stride, format, data) and averages the edge bands.
+unsafe fn frame_edges(node: &mpv_node) -> Result<[[u8; 3]; 4]> {
+    if node.format != MPV_FORMAT_NODE_MAP {
+        bail!("screenshot-raw gave no map");
+    }
+    let list = &*node.u.list;
+    let (mut w, mut h, mut stride, mut format, mut data) = (0i64, 0i64, 0i64, String::new(), (ptr::null::<u8>(), 0usize));
+    for i in 0..list.num as usize {
+        let key = CStr::from_ptr(*list.keys.add(i)).to_string_lossy();
+        let v = &*list.values.add(i);
+        match (key.as_ref(), v.format) {
+            ("w", MPV_FORMAT_INT64) => w = v.u.int64,
+            ("h", MPV_FORMAT_INT64) => h = v.u.int64,
+            ("stride", MPV_FORMAT_INT64) => stride = v.u.int64,
+            ("format", MPV_FORMAT_STRING) => format = CStr::from_ptr(v.u.string).to_string_lossy().into_owned(),
+            ("data", MPV_FORMAT_BYTE_ARRAY) => {
+                let ba = &*v.u.ba;
+                data = (ba.data as *const u8, ba.size);
+            }
+            _ => {}
+        }
+    }
+    if w <= 0 || h <= 0 || data.0.is_null() || (stride * h) as usize > data.1 {
+        bail!("screenshot-raw gave an unexpected frame");
+    }
+    let bytes = std::slice::from_raw_parts(data.0, data.1);
+    // bgr0 and bgra keep red at offset 2; rgba and rgb0 at 0.
+    let (r_at, b_at) = if format.starts_with("bgr") { (2, 0) } else { (0, 2) };
+    Ok(edge_averages(bytes, w as usize, h as usize, stride as usize, r_at, b_at))
+}
+
+/// Averages four bands (left, right, top, bottom; each 18 % deep) of a 4-byte-per-pixel frame,
+/// sampling a sparse grid so a 4K frame costs a few thousand reads.
+pub fn edge_averages(bytes: &[u8], w: usize, h: usize, stride: usize, r_at: usize, b_at: usize) -> [[u8; 3]; 4] {
+    let band_w = (w * 18 / 100).max(1);
+    let band_h = (h * 18 / 100).max(1);
+    let step = (w.max(h) / 96).max(1);
+    let mut sums = [[0u64; 4]; 4];
+    let mut y = 0;
+    while y < h {
+        let mut x = 0;
+        while x < w {
+            let i = y * stride + x * 4;
+            let px = [bytes[i + r_at] as u64, bytes[i + 1] as u64, bytes[i + b_at] as u64];
+            let bands = [x < band_w, x >= w - band_w, y < band_h, y >= h - band_h];
+            for (band, inside) in bands.iter().enumerate() {
+                if *inside {
+                    for c in 0..3 {
+                        sums[band][c] += px[c];
+                    }
+                    sums[band][3] += 1;
+                }
+            }
+            x += step;
+        }
+        y += step;
+    }
+    sums.map(|s| {
+        let n = s[3].max(1);
+        [(s[0] / n) as u8, (s[1] / n) as u8, (s[2] / n) as u8]
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::edge_averages;
+
+    #[test]
+    fn edge_bands_average_their_own_side() {
+        // 100x50 bgr0 frame: left half red, right half blue.
+        let (w, h) = (100, 50);
+        let mut frame = vec![0u8; w * h * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let i = (y * w + x) * 4;
+                if x < w / 2 { frame[i + 2] = 255 } else { frame[i] = 255 }
+            }
+        }
+        let [left, right, top, _] = edge_averages(&frame, w, h, w * 4, 2, 0);
+        assert_eq!(left, [255, 0, 0]);
+        assert_eq!(right, [0, 0, 255]);
+        assert!(top[0] > 100 && top[2] > 100);
+    }
+}
+
 impl Mpv {
     /// Creates a handle with `options` applied before initialization (`wid`, `vo`, ...).
     pub fn new(options: &[(&str, String)]) -> Result<Arc<Self>> {
@@ -100,6 +185,21 @@ impl Mpv {
         ptrs.push(ptr::null());
         // SAFETY: NULL-terminated array of C strings that outlive the call.
         check(unsafe { mpv_command(self.ctx, ptrs.as_mut_ptr()) }, &format!("command {first}"))
+    }
+
+    /// Grabs the current video frame (without subtitles) and returns the average colour
+    /// of its four edge bands: left, right, top, bottom.
+    pub fn edge_colors(&self) -> Result<[[u8; 3]; 4]> {
+        let args = [cstring("screenshot-raw")?, cstring("video")?];
+        let mut ptrs: Vec<*const c_char> = args.iter().map(|c| c.as_ptr()).collect();
+        ptrs.push(ptr::null());
+        // SAFETY: zeroed node is a valid MPV_FORMAT_NONE node for mpv to fill.
+        let mut node: mpv_node = unsafe { std::mem::zeroed() };
+        check(unsafe { mpv_command_ret(self.ctx, ptrs.as_mut_ptr(), &mut node) }, "screenshot-raw")?;
+        // SAFETY: on success mpv filled a node map; it is freed below in every case.
+        let result = unsafe { frame_edges(&node) };
+        unsafe { mpv_free_node_contents(&mut node) };
+        result
     }
 
     pub fn set(&self, name: &str, value: &str) -> Result<()> {
@@ -207,6 +307,21 @@ impl Mpv {
         let _ = self.command(&["quit".into()]);
         // SAFETY: valid handle.
         unsafe { mpv_wakeup(self.ctx) };
+    }
+
+    /// Waits up to `timeout` seconds for the next event and returns its id (0 on timeout).
+    /// Only for handles without an event thread, such as the thumbnailer's.
+    pub fn wait_event(&self, timeout: f64) -> i32 {
+        // SAFETY: valid handle.
+        unsafe { (*mpv_wait_event(self.ctx, timeout)).event_id }
+    }
+
+    /// Destroys the handle. Any render context must be freed before.
+    ///
+    /// # Safety
+    /// Nothing may use this handle afterwards.
+    pub unsafe fn destroy(&self) {
+        mpv_terminate_destroy(self.ctx);
     }
 
     pub fn raw(&self) -> *mut mpv_handle {

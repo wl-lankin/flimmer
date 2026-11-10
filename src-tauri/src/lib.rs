@@ -2,6 +2,7 @@ mod commands;
 #[cfg(target_os = "macos")]
 mod mac_gl;
 mod mpv;
+mod thumbs;
 #[cfg(target_os = "windows")]
 mod view;
 
@@ -71,11 +72,15 @@ fn setup(app: &mut tauri::App) -> anyhow::Result<()> {
         ("osd-level", "0".into()),
         ("osd-bar", "no".into()),
         ("sub-auto", "fuzzy".into()),
+        ("sub-use-margins", "no".into()),
         ("audio-file-auto", "fuzzy".into()),
         ("ytdl", "yes".into()),
         ("target-colorspace-hint", "yes".into()),
         ("resume-playback", "yes".into()),
         ("save-position-on-quit", "yes".into()),
+        ("write-filename-in-watch-later-config", "yes".into()),
+        ("screenshot-format", "png".into()),
+        ("screenshot-template", "Flimmer %F %wH-%wM-%wS".into()),
         ("watch-later-options", "start,vid,aid,sid,speed,sub-delay,audio-delay,volume,mute".into()),
     ];
     #[cfg(target_os = "macos")]
@@ -84,6 +89,11 @@ fn setup(app: &mut tauri::App) -> anyhow::Result<()> {
     {
         options.push(("wid", view::wid(&window)?.to_string()));
         options.push(("vo", "gpu-next".into()));
+    }
+    if let Ok(pictures) = app.path().picture_dir() {
+        let dir = pictures.join("Flimmer");
+        let _ = std::fs::create_dir_all(&dir);
+        options.push(("screenshot-dir", dir.to_string_lossy().into_owned()));
     }
     if let Some(dir) = watch_later_dir(app) {
         options.push(("watch-later-dir", dir.to_string_lossy().into_owned()));
@@ -118,7 +128,14 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(Pending::default())
+        .on_window_event(|_window, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::WindowEvent::ScaleFactorChanged { scale_factor, .. } = _event {
+                mac_gl::set_scale(*scale_factor);
+            }
+        })
         .setup(|app| {
             setup(app).map_err(|e| {
                 eprintln!("setup failed: {e:#}");
@@ -132,6 +149,10 @@ pub fn run() {
             commands::open_files,
             commands::pending_files,
             commands::save_position,
+            commands::edge_colors,
+            commands::filmstrip,
+            commands::recent_files,
+            commands::window_buttons,
         ])
         .build(tauri::generate_context!())
         .expect("building the app");

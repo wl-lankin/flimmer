@@ -15,21 +15,17 @@ use objc2::{define_class, msg_send, AllocAnyThread, MainThreadMarker};
 use objc2_app_kit::{NSAutoresizingMaskOptions, NSView, NSWindowOrderingMode};
 use objc2_quartz_core::{CALayer, CAOpenGLLayer};
 
-use crate::mpv::{ffi::mpv_handle, Mpv};
+use crate::mpv::ffi::{
+    mpv_render_context, mpv_render_context_create, mpv_render_context_render, mpv_render_context_report_swap,
+    mpv_render_context_set_update_callback, mpv_render_context_update, mpv_render_param as RenderParam,
+    MPV_RENDER_PARAM_API_TYPE as PARAM_API_TYPE, MPV_RENDER_PARAM_FLIP_Y as PARAM_FLIP_Y,
+    MPV_RENDER_PARAM_OPENGL_FBO as PARAM_OPENGL_FBO, MPV_RENDER_PARAM_OPENGL_INIT_PARAMS as PARAM_OPENGL_INIT_PARAMS,
+    MPV_RENDER_UPDATE_FRAME as UPDATE_FRAME,
+};
+use crate::mpv::Mpv;
 
 type CGLContextObj = *mut c_void;
 type CGLPixelFormatObj = *mut c_void;
-
-#[repr(C)]
-struct mpv_render_context {
-    _private: [u8; 0],
-}
-
-#[repr(C)]
-struct RenderParam {
-    kind: c_int,
-    data: *mut c_void,
-}
 
 #[repr(C)]
 struct GlInitParams {
@@ -45,27 +41,8 @@ struct GlFbo {
     internal_format: c_int,
 }
 
-const PARAM_API_TYPE: c_int = 1;
-const PARAM_OPENGL_INIT_PARAMS: c_int = 2;
-const PARAM_OPENGL_FBO: c_int = 3;
-const PARAM_FLIP_Y: c_int = 4;
-const UPDATE_FRAME: u64 = 1;
-
 const GL_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
 const GL_VIEWPORT: u32 = 0x0BA2;
-
-#[link(name = "mpv")]
-extern "C" {
-    fn mpv_render_context_create(res: *mut *mut mpv_render_context, mpv: *mut mpv_handle, params: *mut RenderParam) -> c_int;
-    fn mpv_render_context_set_update_callback(
-        ctx: *mut mpv_render_context,
-        callback: Option<unsafe extern "C" fn(*mut c_void)>,
-        callback_ctx: *mut c_void,
-    );
-    fn mpv_render_context_update(ctx: *mut mpv_render_context) -> u64;
-    fn mpv_render_context_render(ctx: *mut mpv_render_context, params: *mut RenderParam) -> c_int;
-    fn mpv_render_context_report_swap(ctx: *mut mpv_render_context);
-}
 
 #[link(name = "OpenGL", kind = "framework")]
 extern "C" {
@@ -84,6 +61,7 @@ extern "C" {
 static PIXEL_FORMAT: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
 static CONTEXT: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
 static RENDER: AtomicPtr<mpv_render_context> = AtomicPtr::new(ptr::null_mut());
+static LAYER: AtomicPtr<objc2::runtime::AnyObject> = AtomicPtr::new(ptr::null_mut());
 /// Set by mpv's update callback; the layer asks mpv what changed on its next vsync.
 static UPDATE: AtomicBool = AtomicBool::new(false);
 /// Set on resize and similar: draw once even without a new frame.
@@ -240,6 +218,7 @@ pub fn attach(window: &tauri::WebviewWindow, player: &Mpv) -> Result<()> {
         let _: () = msg_send![&*layer, setContentsScale: scale];
         let _: () = msg_send![&*layer, setOpaque: false];
     }
+    LAYER.store(Retained::as_ptr(&layer) as *mut _, Ordering::Release);
     let view = NSView::initWithFrame(mtm.alloc::<NSView>(), content.bounds());
     view.setLayer(Some(&layer));
     view.setWantsLayer(true);
@@ -250,7 +229,14 @@ pub fn attach(window: &tauri::WebviewWindow, player: &Mpv) -> Result<()> {
     Ok(())
 }
 
-/// Redraws the current frame, e.g. after the window changed its backing scale.
-pub fn redraw() {
-    FORCE.store(true, Ordering::Release);
+/// Follows the window to a screen with another backing scale. Main thread only.
+pub fn set_scale(scale: f64) {
+    let layer = LAYER.load(Ordering::Acquire);
+    if !layer.is_null() {
+        // SAFETY: the layer lives as long as the window's view.
+        unsafe {
+            let _: () = msg_send![layer, setContentsScale: scale];
+        }
+        FORCE.store(true, Ordering::Release);
+    }
 }

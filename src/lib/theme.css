@@ -1,0 +1,50 @@
+:root {
+  --room: #0a0b10;
+  --room-2: #12141c;
+  --line: rgba(255, 255, 255, 0.1);
+  --fg: #f1efe9;
+  --muted: rgba(241, 239, 233, 0.62);
+  --beam: #ffb454;
+  --beam-soft: rgba(255, 180, 84, 0.16);
+  --glass: rgba(18, 18, 24, 0.5);
+  --glass-strong: rgba(18, 18, 24, 0.82);
+  --glass-line: rgba(255, 255, 255, 0.13);
+  --f-display: 'Bricolage Grotesque Variable', 'Avenir Next', system-ui, sans-serif;
+  --f-text: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-data: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  color: var(--fg);
+  font: 14px/1.45 var(--f-text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+button:focus-visible, input:focus-visible { outline: 2px solid var(--beam); outline-offset: 2px; }
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  border: 1px solid var(--glass-line);
+  box-shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.7);
+}
+.mono { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
