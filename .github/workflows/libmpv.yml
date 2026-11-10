@@ -56,7 +56,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: mpv-build/dl
-          key: libmpv-windows-${{ hashFiles('scripts/libmpv-config.sh') }}
+          key: libmpv-windows-${{ hashFiles('scripts/libmpv-windows.sh') }}
 
       - name: Fetch libmpv for Windows
         run: |

@@ -10,11 +10,13 @@
   import VolumeControl from './VolumeControl.svelte';
   import TrackMenu from './TrackMenu.svelte';
   import SpeedMenu from './SpeedMenu.svelte';
+  import TogetherPanel from './TogetherPanel.svelte';
+  import { together } from '../together.svelte';
 
   const fps = $derived(player.tracks.find((tr) => tr.type === 'video' && tr.selected)?.['demux-fps'] ?? player.fps ?? 0);
   const tc = $derived(timecode(player.time, fps));
   const loopLabel = $derived(player.loopA === null ? 'A-B' : player.loopB === null ? 'A-…' : 'A-B ✓');
-  const toggleMenu = (m: 'tracks' | 'speed') => (ui.menu = ui.menu === m ? null : m);
+  const toggleMenu = (m: 'tracks' | 'speed' | 'together') => (ui.menu = ui.menu === m ? null : m);
 </script>
 
 <div class="studio glass" role="toolbar" aria-label="Studio">
@@ -44,6 +46,10 @@
       {#if ui.menu === 'tracks'}<TrackMenu />{/if}
     </div>
     <VolumeControl />
+    <div class="anchor">
+      <button class="icon" class:on={!!together.room || ui.menu === 'together'} onclick={() => toggleMenu('together')} aria-label={t('together')} title={t('together')}><Icon name="people" /></button>
+      {#if ui.menu === 'together'}<TogetherPanel />{/if}
+    </div>
     <button class="icon" onclick={() => player.screenshot().then(() => ui.say(t('screenshot')))} title="{t('screenshot')} (S)" aria-label={t('screenshot')}><Icon name="camera" /></button>
     <button class="icon" class:on={ui.info} onclick={() => (ui.info = !ui.info)} title="{t('info')} (I)" aria-label={t('info')}><Icon name="info" /></button>
     <button class="icon on" onclick={() => { ui.studio = false; ui.say(t('studioOff')); }} title="{t('studio')} (Tab)" aria-label={t('studio')}><Icon name="studio" /></button>

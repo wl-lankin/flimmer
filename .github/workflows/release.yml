@@ -200,13 +200,14 @@ jobs:
       - name: libmpv sources and build recipe
         run: |
           . scripts/libmpv-config.sh
+          . scripts/libmpv-windows.sh
           libmpv_fetch_sources libmpv-src
           curl -fsSL -o "libmpv-src/mpv-windows-${LIBMPV_WINDOWS_MPV_COMMIT}.tar.gz" \
             "https://github.com/mpv-player/mpv/archive/${LIBMPV_WINDOWS_MPV_COMMIT}.tar.gz"
           tar -cf flimmer-libmpv-sources.tar -C libmpv-src .
           tar -czf flimmer-libmpv-build-scripts.tar.gz \
             scripts/libmpv-config.sh scripts/build-libmpv-macos.sh scripts/check-libmpv-macos.sh \
-            scripts/fetch-libmpv-windows.sh docs/libmpv.md
+            scripts/fetch-libmpv-windows.sh scripts/libmpv-windows.sh docs/libmpv.md
           gh release upload "$TAG" flimmer-libmpv-sources.tar flimmer-libmpv-build-scripts.tar.gz --clobber
 
       - name: Verify the release has every asset

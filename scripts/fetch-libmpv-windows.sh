@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/libmpv-config.sh"
+. "$ROOT/scripts/libmpv-windows.sh"
 DL="$ROOT/mpv-build/dl"
 OUT="$ROOT/mpv-build/out/windows"
 mkdir -p "$DL" "$OUT"

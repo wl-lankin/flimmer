@@ -39,9 +39,9 @@ Ohne `MPV_LIB_DIR` linkt die Entwicklung gegen die libmpv von Homebrew (`brew in
 
 ## Windows
 
-Windows nutzt den LGPL-Build von [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild) (`mpv-dev-lgpl-x86_64`, mit `-Dgpl=false`, alles statisch in `libmpv-2.dll`). `scripts/fetch-libmpv-windows.sh` lädt die festgelegte Fassung und prüft die SHA-256. Rust bindet die DLL per `raw-dylib`, eine Import-Bibliothek ist nicht nötig. Der Installer legt `libmpv-2.dll` neben `flimmer.exe`.
+Windows nutzt den LGPL-Build von [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild) (`mpv-dev-lgpl-x86_64`, mit `-Dgpl=false`, alles statisch in `libmpv-2.dll`). `scripts/fetch-libmpv-windows.sh` lädt die in `scripts/libmpv-windows.sh` festgelegte Fassung und prüft die SHA-256. Rust bindet die DLL per `raw-dylib`, eine Import-Bibliothek ist nicht nötig. Der Installer legt `libmpv-2.dll` neben `flimmer.exe`.
 
-Upstream hält nur die letzten Builds vor. Damit ein Release auch später noch baut, kann das Archiv in diesem Repo gespiegelt werden, das Skript nutzt den Spiegel als Ausweichquelle:
+Upstream hält nur die letzten Builds vor und lädt Builds unter demselben Tag gelegentlich neu hoch (andere Prüfsumme). Damit ein Release auch später noch baut, kann das Archiv in diesem Repo gespiegelt werden, das Skript nutzt den Spiegel als Ausweichquelle:
 
 ```sh
 gh release create libmpv-windows -R wl-lankin/flimmer --prerelease \

@@ -1,6 +1,6 @@
-# The one place that pins Flimmer's libmpv: every source release, its checksum, and the Windows
-# build. Sourced by build-libmpv-macos.sh, fetch-libmpv-windows.sh and the workflows. Changing
-# this file changes the CI cache key, so the library is rebuilt.
+# The one place that pins Flimmer's macOS libmpv: every source release and its checksum, plus the
+# download helpers. Sourced by the build and fetch scripts and the workflows. Changing this file
+# changes the CI cache key, so the library is rebuilt. The Windows pin is in libmpv-windows.sh.
 #
 # Versions and checksums follow the Homebrew formulae of the same name at the time of pinning.
 
@@ -22,15 +22,6 @@ libplacebo|7.387.0|https://code.videolan.org/videolan/libplacebo/-/archive/v7.38
 ffmpeg|9.0.2|https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz|8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
 mpv|0.42.0|https://github.com/mpv-player/mpv/archive/refs/tags/v0.42.0.tar.gz|bcfebbfa2b65a6d88dc97ea18117831072373e38b5785a2afb874ed4df5070dd
 "
-
-# Windows: the LGPL dev build of zhongfly/mpv-winbuild (mpv built with -Dgpl=false, everything
-# linked statically into libmpv-2.dll). Upstream keeps only recent builds; the archive can also
-# be mirrored into this repository's "libmpv-windows" release (docs/libmpv.md).
-LIBMPV_WINDOWS_FILE="mpv-dev-lgpl-x86_64-20261110-git-d075ec2a28.7z"
-LIBMPV_WINDOWS_UPSTREAM="https://github.com/zhongfly/mpv-winbuild/releases/download/2026-11-10-d075ec2a28/$LIBMPV_WINDOWS_FILE"
-LIBMPV_WINDOWS_MIRROR="https://github.com/wl-lankin/flimmer/releases/download/libmpv-windows/$LIBMPV_WINDOWS_FILE"
-LIBMPV_WINDOWS_SHA256="2aeabf8632c99175614043bcece232ce9bda8c681227b3f998438b7eca379111"
-LIBMPV_WINDOWS_MPV_COMMIT="d075ec2a28"
 
 libmpv_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
