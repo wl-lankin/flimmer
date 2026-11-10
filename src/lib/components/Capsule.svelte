@@ -9,9 +9,11 @@
   import VolumeControl from './VolumeControl.svelte';
   import TrackMenu from './TrackMenu.svelte';
   import SpeedMenu from './SpeedMenu.svelte';
+  import TogetherPanel from './TogetherPanel.svelte';
+  import { together } from '../together.svelte';
 
   const long = $derived(player.duration >= 3600);
-  const toggleMenu = (m: 'tracks' | 'speed') => (ui.menu = ui.menu === m ? null : m);
+  const toggleMenu = (m: 'tracks' | 'speed' | 'together') => (ui.menu = ui.menu === m ? null : m);
 </script>
 
 <div class="capsule glass" role="toolbar" aria-label="Wiedergabe">
@@ -33,6 +35,12 @@
       {player.speed.toLocaleString(undefined, { maximumFractionDigits: 2 })}×
     </button>
     {#if ui.menu === 'speed'}<SpeedMenu />{/if}
+  </div>
+  <div class="anchor">
+    <button class="icon" class:on={!!together.room || ui.menu === 'together'} onclick={() => toggleMenu('together')} aria-label={t('together')} title={t('together')}>
+      <Icon name="people" />
+    </button>
+    {#if ui.menu === 'together'}<TogetherPanel />{/if}
   </div>
   <button class="icon" class:on={ui.studio} onclick={() => { ui.studio = !ui.studio; ui.say(ui.studio ? t('studioOn') : t('studioOff')); }} aria-label={t('studio')} title="{t('studio')} (Tab)">
     <Icon name="studio" />

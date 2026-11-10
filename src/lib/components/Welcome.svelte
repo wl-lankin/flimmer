@@ -5,10 +5,16 @@
   import { t } from '../i18n';
   import { isMac } from '../ui.svelte';
   import Icon from './Icon.svelte';
+  import backdrop from '../../assets/welcome.webp';
+  import { updater } from '../update.svelte';
 
   let recent = $state<{ path: string; start: number; saved: number }[]>([]);
   let url = $state('');
   let urlOpen = $state(false);
+
+  $effect(() => {
+    updater.look();
+  });
 
   $effect(() => {
     mpv.recentFiles().then((r) => (recent = r)).catch(() => {});
@@ -33,6 +39,7 @@
 </script>
 
 <main class="welcome">
+  <div class="backdrop" aria-hidden="true" style:background-image="url({backdrop})"></div>
   <div class="beam" aria-hidden="true"></div>
   <div class="grain" aria-hidden="true"></div>
   <section class="hero">
@@ -54,6 +61,13 @@
       {/if}
     </div>
     <p class="drop">{t('dropHere')}</p>
+    {#if updater.available}
+      <button class="update" onclick={() => updater.install()} disabled={updater.installing}>
+        <span class="dot"></span>
+        {t('updateReady').replace('{v}', updater.available.version)}
+        <b>{updater.installing ? t('updating') : t('updateInstall')}</b>
+      </button>
+    {/if}
   </section>
 
   <section class="recent" aria-label={t('continue')}>
@@ -88,17 +102,20 @@
     padding: 64px max(32px, 6vw) 40px;
     overflow: hidden;
   }
+  .backdrop {
+    position: absolute;
+    inset: 0;
+    background: center right / cover no-repeat;
+    pointer-events: none;
+  }
+  /* The projector's light breathes a little, like a lamp on mains power. */
   .beam {
     position: absolute;
-    inset: -30% -20% auto auto;
-    width: 90vw;
-    height: 110vh;
-    background:
-      radial-gradient(closest-side, rgba(255, 180, 84, 0.2), transparent 70%),
-      conic-gradient(from 200deg at 85% 10%, transparent 0deg, rgba(255, 196, 120, 0.07) 18deg, transparent 40deg);
+    inset: 0;
+    background: radial-gradient(60% 50% at 70% 45%, rgba(255, 180, 84, 0.14), transparent 70%);
     pointer-events: none;
-    animation: drift 14s ease-in-out infinite alternate;
-    mask-image: radial-gradient(closest-side, #000 35%, transparent 100%);
+    mix-blend-mode: screen;
+    animation: lamp 5s ease-in-out infinite alternate;
   }
   .grain {
     position: absolute;
@@ -108,6 +125,30 @@
     pointer-events: none;
   }
   .hero, .recent { position: relative; min-width: 0; }
+  .recent {
+    padding: 18px 14px 12px;
+    border-radius: 18px;
+    background: rgba(10, 11, 16, 0.62);
+    backdrop-filter: blur(18px) saturate(1.3);
+    -webkit-backdrop-filter: blur(18px) saturate(1.3);
+    border: 1px solid var(--line);
+  }
+  .update {
+    margin-top: 22px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--beam) 45%, transparent);
+    background: var(--beam-soft);
+    font-size: 13px;
+  }
+  .update b { color: var(--beam); font-weight: 600; }
+  .update .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--beam); box-shadow: 0 0 10px var(--beam); }
+  .recent h2 { padding-left: 12px; }
+  .empty { padding: 0 12px 8px; }
+  .word { text-shadow: 0 0 60px rgba(255, 180, 84, 0.25); }
   .word {
     margin: 0;
     font: 800 clamp(64px, 12vw, 168px) / 0.88 var(--f-display);
@@ -136,6 +177,19 @@
   .url input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--fg); font: inherit; user-select: text; }
   .url button { height: 32px; padding: 0 12px; border-radius: 8px; background: var(--beam); color: #1b1206; font-weight: 600; }
   .drop { margin-top: 26px; font: 500 11px var(--f-data); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .update {
+    margin-top: 22px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--beam) 45%, transparent);
+    background: var(--beam-soft);
+    font-size: 13px;
+  }
+  .update b { color: var(--beam); font-weight: 600; }
+  .update .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--beam); box-shadow: 0 0 10px var(--beam); }
   .recent h2 {
     margin: 0 0 12px;
     font: 500 11px var(--f-data);
@@ -167,7 +221,7 @@
     94% { opacity: 1; }
     96% { opacity: 0.8; }
   }
-  @keyframes drift { to { transform: translate(-4vw, 3vh) rotate(-4deg); } }
+  @keyframes lamp { from { opacity: 0.55; } to { opacity: 1; } }
   @media (max-width: 760px) {
     .welcome { grid-template-columns: 1fr; align-content: center; gap: 36px; }
     ul { max-height: 30vh; }

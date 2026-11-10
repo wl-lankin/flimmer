@@ -14,7 +14,7 @@ function save(key: string, value: unknown) {
   }
 }
 
-export type Menu = 'tracks' | 'speed' | null;
+export type Menu = 'tracks' | 'speed' | 'together' | null;
 
 class Ui {
   controls = $state(true);

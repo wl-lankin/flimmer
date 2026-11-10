@@ -1,8 +1,12 @@
 mod commands;
+mod intro;
 #[cfg(target_os = "macos")]
 mod mac_gl;
 mod mpv;
+mod pcm;
+mod subtitles;
 mod thumbs;
+mod together;
 #[cfg(target_os = "windows")]
 mod view;
 
@@ -57,7 +61,9 @@ fn watch_later_dir(app: &tauri::App) -> Option<PathBuf> {
 }
 
 fn setup(app: &mut tauri::App) -> anyhow::Result<()> {
-    let window = app.get_webview_window(MAIN_LABEL).ok_or_else(|| anyhow::anyhow!("no main window"))?;
+    let window = app
+        .get_webview_window(MAIN_LABEL)
+        .ok_or_else(|| anyhow::anyhow!("no main window"))?;
     let mut options: Vec<(&str, String)> = vec![
         ("hwdec", "auto-safe".into()),
         ("config", "no".into()),
@@ -81,10 +87,17 @@ fn setup(app: &mut tauri::App) -> anyhow::Result<()> {
         ("write-filename-in-watch-later-config", "yes".into()),
         ("screenshot-format", "png".into()),
         ("screenshot-template", "Flimmer %F %wH-%wM-%wS".into()),
-        ("watch-later-options", "start,vid,aid,sid,speed,sub-delay,audio-delay,volume,mute".into()),
+        (
+            "watch-later-options",
+            "start,vid,aid,sid,speed,sub-delay,audio-delay,volume,mute".into(),
+        ),
     ];
     #[cfg(target_os = "macos")]
-    options.push(("vo", "libmpv".into()));
+    {
+        options.push(("vo", "libmpv".into()));
+        // Shipped libmpv has no VideoToolbox-OpenGL interop; decode in hardware and copy.
+        options.push(("hwdec", "auto-safe,videotoolbox-copy".into()));
+    }
     #[cfg(target_os = "windows")]
     {
         options.push(("wid", view::wid(&window)?.to_string()));
@@ -98,6 +111,9 @@ fn setup(app: &mut tauri::App) -> anyhow::Result<()> {
     if let Some(dir) = watch_later_dir(app) {
         options.push(("watch-later-dir", dir.to_string_lossy().into_owned()));
     }
+    if let Ok(dir) = app.path().app_data_dir() {
+        app.manage(intro::Cache::load(dir.join("intros.json")));
+    }
     let player = Mpv::new(&options)?;
     #[cfg(target_os = "macos")]
     mac_gl::attach(&window, &player)?;
@@ -110,7 +126,10 @@ fn setup(app: &mut tauri::App) -> anyhow::Result<()> {
     eprintln!("libmpv client API {major}.{minor}");
     app.manage(player);
 
-    let args: Vec<String> = std::env::args().skip(1).filter(|a| !a.starts_with('-')).collect();
+    let args: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|a| !a.starts_with('-'))
+        .collect();
     app.state::<Pending>().0.lock().unwrap().extend(args);
     Ok(())
 }
@@ -118,7 +137,11 @@ fn setup(app: &mut tauri::App) -> anyhow::Result<()> {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            let files: Vec<String> = argv.into_iter().skip(1).filter(|a| !a.starts_with('-')).collect();
+            let files: Vec<String> = argv
+                .into_iter()
+                .skip(1)
+                .filter(|a| !a.starts_with('-'))
+                .collect();
             if !files.is_empty() {
                 let _ = app.emit_to(MAIN_LABEL, "open-files", files);
             }
@@ -129,7 +152,11 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(Pending::default())
+        .manage(subtitles::Jobs::default())
+        .manage(together::Link::default())
         .on_window_event(|_window, _event| {
             #[cfg(target_os = "macos")]
             if let tauri::WindowEvent::ScaleFactorChanged { scale_factor, .. } = _event {
@@ -151,6 +178,14 @@ pub fn run() {
             commands::save_position,
             commands::edge_colors,
             commands::filmstrip,
+            commands::detect_intro,
+            commands::subtitles_create,
+            commands::subtitles_cancel,
+            commands::transcript_for,
+            commands::transcript_search,
+            together::together_open,
+            together::together_send,
+            together::together_close,
             commands::recent_files,
             commands::window_buttons,
         ])
@@ -162,9 +197,19 @@ pub fn run() {
         tauri::RunEvent::Opened { urls } => {
             let files: Vec<String> = urls
                 .into_iter()
-                .filter_map(|u| u.to_file_path().ok().map(|p| p.to_string_lossy().into_owned()).or(Some(u.to_string())))
+                .filter_map(|u| {
+                    u.to_file_path()
+                        .ok()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .or(Some(u.to_string()))
+                })
                 .collect();
-            handle.state::<Pending>().0.lock().unwrap().extend(files.clone());
+            handle
+                .state::<Pending>()
+                .0
+                .lock()
+                .unwrap()
+                .extend(files.clone());
             let _ = handle.emit_to(MAIN_LABEL, "open-files", files);
         }
         tauri::RunEvent::ExitRequested { .. } => {

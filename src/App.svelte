@@ -17,11 +17,16 @@
   import Aura from './lib/components/Aura.svelte';
   import TitleBar from './lib/components/TitleBar.svelte';
   import Toast from './lib/components/Toast.svelte';
+  import SkipIntro from './lib/components/SkipIntro.svelte';
+  import SubsProgress from './lib/components/SubsProgress.svelte';
+  import Search from './lib/components/Search.svelte';
+  import { subs } from './lib/subs.svelte';
 
   const AURA_MARGIN = 0.035;
   const HIDE_AFTER = 2200;
 
   let welcome: Welcome | undefined = $state();
+  let searching = $state(false);
   let overControls = false;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -89,7 +94,10 @@
   onMount(() => {
     const cleanups: (() => void)[] = [];
     const w = getCurrentWindow();
-    mpv.onEvent((e) => player.handle(e)).then((u) => cleanups.push(u));
+    mpv.onEvent((e) => {
+      player.handle(e);
+      if (e.kind === 'file-loaded') setTimeout(() => player.path && subs.attach(player.path), 300);
+    }).then((u) => cleanups.push(u));
     listen<string[]>('open-files', (e) => open(e.payload)).then((u) => cleanups.push(u));
     w.onResized(async () => (ui.fullscreen = await w.isFullscreen())).then((u) => cleanups.push(u));
     getCurrentWebview()
@@ -115,6 +123,12 @@
       .then(open);
 
     const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        searching = !searching;
+        return;
+      }
+      if (searching) return;
       handleKey(e, () => welcome?.pickFiles() ?? pickFromPlayer()).then((used) => used && poke());
       if (['Tab', ' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown'].includes(e.key)) e.preventDefault();
     };
@@ -156,10 +170,13 @@
     >
       {#if ui.studio}<StudioBar />{:else}<Capsule />{/if}
     </div>
+    <SkipIntro />
     {#if player.buffering}<div class="buffering" aria-label="Lädt"></div>{/if}
   {/if}
   <TitleBar {title} visible={showUi && !player.idle} />
+  <SubsProgress />
   <Toast />
+  {#if searching}<Search onclose={() => (searching = false)} />{/if}
   {#if ui.dropping}
     <div class="drop">
       <div class="drop-card">{ui.dropping === 'subtitle' ? t('dropSubtitle') : t('dropRelease')}</div>

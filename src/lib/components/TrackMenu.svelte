@@ -6,6 +6,10 @@
   import { SUBTITLE_EXTENSIONS } from '../format';
   import Icon from './Icon.svelte';
   import Popover from './Popover.svelte';
+  import { subs } from '../subs.svelte';
+  import { ui } from '../ui.svelte';
+
+  const local = $derived(!!player.path && !/^[a-z]+:\/\//i.test(player.path));
 
   async function loadSubtitle() {
     const file = await open({ multiple: false, filters: [{ name: t('subtitles'), extensions: SUBTITLE_EXTENSIONS }] });
@@ -35,6 +39,11 @@
     </button>
   {/each}
   <button class="item" onclick={loadSubtitle}><span class="mark"></span>{t('loadSubtitle')}</button>
+  {#if local}
+    <button class="item" disabled={subs.running} onclick={() => { ui.menu = null; subs.create(); }}>
+      <span class="mark"></span>{t('makeSubtitles')}<small>whisper</small>
+    </button>
+  {/if}
   {#if player.currentSub}
     <div class="delay">
       <span>{t('delay')}</span>

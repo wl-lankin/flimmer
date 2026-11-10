@@ -19,6 +19,10 @@
 - **Pause poster:** pausing turns the frame into a poster with the title, chapter, time left and the time the film ends.
 - **Studio mode** (Tab): filmstrip, timecode with frames, frame stepping, A-B loop, technical overlay.
 - **Continue watching:** every file resumes where you stopped, with its audio, subtitle and speed.
+- **Subtitles from nothing:** whisper.cpp writes subtitles on your computer; a local Ollama translates them.
+- **Search what is said** (⌘F / Ctrl+F): jump to the moment a word is spoken, across everything Flimmer transcribed.
+- **Skip intro:** Flimmer listens to the episodes in a folder and finds the intro they share. No online database.
+- **Watch together:** a room code, everyone plays their own file, pause and position stay in step.
 
 ## Keys
 
@@ -37,6 +41,7 @@
 | I / G | Technical overlay / Aura |
 | 0-9 | Jump to 0 %-90 % |
 | ⌘V / Ctrl+V | Play a link from the clipboard |
+| ⌘F / Ctrl+F | Search what is said |
 
 ## Building
 
@@ -48,7 +53,7 @@ npm install
 npm run tauri dev
 ```
 
-On Windows, set `MPV_LIB_DIR` to a folder with `mpv.lib` and put `libmpv-2.dll` next to the binary.
+`brew install mpv` is only for development (it is a GPL build). Releases ship Flimmer's own LGPL libmpv, see [docs/libmpv.md](docs/libmpv.md). On Windows, run `scripts/fetch-libmpv-windows.sh` and put `mpv-build/out/windows/libmpv-2.dll` next to the binary. Releasing: [docs/releasing.md](docs/releasing.md). The watch-together relay lives in [server/](server/).
 
 ## License
 

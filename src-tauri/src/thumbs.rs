@@ -76,11 +76,20 @@ pub fn filmstrip(path: &str, count: usize, width: u32, mut each: impl FnMut(Stil
     .map(|(k, v)| (k, v.to_string()))
     .collect();
     let mpv = Mpv::new(&options)?;
-    let mut r = Renderer { mpv, render: ptr::null_mut() };
+    let mut r = Renderer {
+        mpv,
+        render: ptr::null_mut(),
+    };
     let api = c"sw";
     let mut params = [
-        mpv_render_param { kind: MPV_RENDER_PARAM_API_TYPE, data: api.as_ptr() as *mut c_void },
-        mpv_render_param { kind: 0, data: ptr::null_mut() },
+        mpv_render_param {
+            kind: MPV_RENDER_PARAM_API_TYPE,
+            data: api.as_ptr() as *mut c_void,
+        },
+        mpv_render_param {
+            kind: 0,
+            data: ptr::null_mut(),
+        },
     ];
     // SAFETY: valid handle; params are terminated.
     if unsafe { mpv_render_context_create(&mut r.render, r.mpv.raw(), params.as_mut_ptr()) } < 0 {
@@ -89,13 +98,29 @@ pub fn filmstrip(path: &str, count: usize, width: u32, mut each: impl FnMut(Stil
     r.mpv.command(&["loadfile".into(), path.into()])?;
     wait_for(&r.mpv, MPV_EVENT_FILE_LOADED, Duration::from_secs(15))?;
 
-    let duration: f64 = r.mpv.get("duration").and_then(|d| d.parse().ok()).unwrap_or(0.0);
-    let dw: f64 = r.mpv.get("video-params/dw").and_then(|d| d.parse().ok()).unwrap_or(0.0);
-    let dh: f64 = r.mpv.get("video-params/dh").and_then(|d| d.parse().ok()).unwrap_or(0.0);
+    let duration: f64 = r
+        .mpv
+        .get("duration")
+        .and_then(|d| d.parse().ok())
+        .unwrap_or(0.0);
+    let dw: f64 = r
+        .mpv
+        .get("video-params/dw")
+        .and_then(|d| d.parse().ok())
+        .unwrap_or(0.0);
+    let dh: f64 = r
+        .mpv
+        .get("video-params/dh")
+        .and_then(|d| d.parse().ok())
+        .unwrap_or(0.0);
     if duration <= 0.0 {
         bail!("thumbnailer: no duration");
     }
-    let aspect = if dw > 0.0 && dh > 0.0 { dw / dh } else { 16.0 / 9.0 };
+    let aspect = if dw > 0.0 && dh > 0.0 {
+        dw / dh
+    } else {
+        16.0 / 9.0
+    };
     let w = width.max(16) as c_int;
     let h = ((width as f64 / aspect).round() as c_int).max(2) & !1;
     let stride = ((w as usize * 4) + 63) & !63;
@@ -103,7 +128,11 @@ pub fn filmstrip(path: &str, count: usize, width: u32, mut each: impl FnMut(Stil
 
     for index in 0..count {
         let time = duration * (index as f64 + 0.5) / count as f64;
-        r.mpv.command(&["seek".into(), format!("{time:.3}"), "absolute+keyframes".into()])?;
+        r.mpv.command(&[
+            "seek".into(),
+            format!("{time:.3}"),
+            "absolute+keyframes".into(),
+        ])?;
         if wait_for(&r.mpv, MPV_EVENT_PLAYBACK_RESTART, Duration::from_secs(8)).is_err() {
             continue;
         }
@@ -116,11 +145,26 @@ pub fn filmstrip(path: &str, count: usize, width: u32, mut each: impl FnMut(Stil
                 let format = c"rgb0";
                 let mut stride_v = stride;
                 let mut params = [
-                    mpv_render_param { kind: MPV_RENDER_PARAM_SW_SIZE, data: size.as_mut_ptr().cast() },
-                    mpv_render_param { kind: MPV_RENDER_PARAM_SW_FORMAT, data: format.as_ptr() as *mut c_void },
-                    mpv_render_param { kind: MPV_RENDER_PARAM_SW_STRIDE, data: (&mut stride_v as *mut usize).cast() },
-                    mpv_render_param { kind: MPV_RENDER_PARAM_SW_POINTER, data: buffer.as_mut_ptr().cast() },
-                    mpv_render_param { kind: 0, data: ptr::null_mut() },
+                    mpv_render_param {
+                        kind: MPV_RENDER_PARAM_SW_SIZE,
+                        data: size.as_mut_ptr().cast(),
+                    },
+                    mpv_render_param {
+                        kind: MPV_RENDER_PARAM_SW_FORMAT,
+                        data: format.as_ptr() as *mut c_void,
+                    },
+                    mpv_render_param {
+                        kind: MPV_RENDER_PARAM_SW_STRIDE,
+                        data: (&mut stride_v as *mut usize).cast(),
+                    },
+                    mpv_render_param {
+                        kind: MPV_RENDER_PARAM_SW_POINTER,
+                        data: buffer.as_mut_ptr().cast(),
+                    },
+                    mpv_render_param {
+                        kind: 0,
+                        data: ptr::null_mut(),
+                    },
                 ];
                 // SAFETY: the buffer holds stride * h bytes as declared.
                 drawn = unsafe { mpv_render_context_render(r.render, params.as_mut_ptr()) } >= 0;
@@ -138,9 +182,33 @@ pub fn filmstrip(path: &str, count: usize, width: u32, mut each: impl FnMut(Stil
             }
         }
         let mut jpeg = Vec::new();
-        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 72).encode(&rgb, w as u32, h as u32, image::ExtendedColorType::Rgb8)?;
-        let url = format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(&jpeg));
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 72).encode(
+            &rgb,
+            w as u32,
+            h as u32,
+            image::ExtendedColorType::Rgb8,
+        )?;
+        let url = format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&jpeg)
+        );
         each(Still { index, time, url });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// Needs testmedia/test.mkv (made by hand with ffmpeg, not in git): run with --ignored.
+    #[test]
+    #[ignore]
+    fn renders_stills_from_a_real_file() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../testmedia/test.mkv");
+        let mut stills = Vec::new();
+        super::filmstrip(path.to_str().unwrap(), 4, 160, |s| stills.push(s)).unwrap();
+        assert_eq!(stills.len(), 4);
+        assert!(stills
+            .iter()
+            .all(|s| s.url.starts_with("data:image/jpeg;base64,") && s.url.len() > 1000));
+    }
 }

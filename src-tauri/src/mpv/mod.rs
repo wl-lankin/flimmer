@@ -28,10 +28,16 @@ unsafe impl Sync for Mpv {}
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Event {
-    Prop { name: String, value: Option<String> },
+    Prop {
+        name: String,
+        value: Option<String>,
+    },
     StartFile,
     FileLoaded,
-    EndFile { reason: &'static str, error: Option<String> },
+    EndFile {
+        reason: &'static str,
+        error: Option<String>,
+    },
     VideoReconfig,
     Seek,
     PlaybackRestart,
@@ -39,7 +45,13 @@ pub enum Event {
 }
 
 /// Commands that would let the page run programs or scripts through mpv.
-const BLOCKED_COMMANDS: &[&str] = &["run", "subprocess", "load-script", "load-config-file", "load-input-conf"];
+const BLOCKED_COMMANDS: &[&str] = &[
+    "run",
+    "subprocess",
+    "load-script",
+    "load-config-file",
+    "load-input-conf",
+];
 
 fn cstring(s: &str) -> Result<CString> {
     CString::new(s).map_err(|_| anyhow!("NUL byte in mpv argument"))
@@ -70,7 +82,8 @@ unsafe fn frame_edges(node: &mpv_node) -> Result<[[u8; 3]; 4]> {
         bail!("screenshot-raw gave no map");
     }
     let list = &*node.u.list;
-    let (mut w, mut h, mut stride, mut format, mut data) = (0i64, 0i64, 0i64, String::new(), (ptr::null::<u8>(), 0usize));
+    let (mut w, mut h, mut stride, mut format, mut data) =
+        (0i64, 0i64, 0i64, String::new(), (ptr::null::<u8>(), 0usize));
     for i in 0..list.num as usize {
         let key = CStr::from_ptr(*list.keys.add(i)).to_string_lossy();
         let v = &*list.values.add(i);
@@ -78,7 +91,9 @@ unsafe fn frame_edges(node: &mpv_node) -> Result<[[u8; 3]; 4]> {
             ("w", MPV_FORMAT_INT64) => w = v.u.int64,
             ("h", MPV_FORMAT_INT64) => h = v.u.int64,
             ("stride", MPV_FORMAT_INT64) => stride = v.u.int64,
-            ("format", MPV_FORMAT_STRING) => format = CStr::from_ptr(v.u.string).to_string_lossy().into_owned(),
+            ("format", MPV_FORMAT_STRING) => {
+                format = CStr::from_ptr(v.u.string).to_string_lossy().into_owned()
+            }
             ("data", MPV_FORMAT_BYTE_ARRAY) => {
                 let ba = &*v.u.ba;
                 data = (ba.data as *const u8, ba.size);
@@ -91,13 +106,31 @@ unsafe fn frame_edges(node: &mpv_node) -> Result<[[u8; 3]; 4]> {
     }
     let bytes = std::slice::from_raw_parts(data.0, data.1);
     // bgr0 and bgra keep red at offset 2; rgba and rgb0 at 0.
-    let (r_at, b_at) = if format.starts_with("bgr") { (2, 0) } else { (0, 2) };
-    Ok(edge_averages(bytes, w as usize, h as usize, stride as usize, r_at, b_at))
+    let (r_at, b_at) = if format.starts_with("bgr") {
+        (2, 0)
+    } else {
+        (0, 2)
+    };
+    Ok(edge_averages(
+        bytes,
+        w as usize,
+        h as usize,
+        stride as usize,
+        r_at,
+        b_at,
+    ))
 }
 
 /// Averages four bands (left, right, top, bottom; each 18 % deep) of a 4-byte-per-pixel frame,
 /// sampling a sparse grid so a 4K frame costs a few thousand reads.
-pub fn edge_averages(bytes: &[u8], w: usize, h: usize, stride: usize, r_at: usize, b_at: usize) -> [[u8; 3]; 4] {
+pub fn edge_averages(
+    bytes: &[u8],
+    w: usize,
+    h: usize,
+    stride: usize,
+    r_at: usize,
+    b_at: usize,
+) -> [[u8; 3]; 4] {
     let band_w = (w * 18 / 100).max(1);
     let band_h = (h * 18 / 100).max(1);
     let step = (w.max(h) / 96).max(1);
@@ -107,7 +140,11 @@ pub fn edge_averages(bytes: &[u8], w: usize, h: usize, stride: usize, r_at: usiz
         let mut x = 0;
         while x < w {
             let i = y * stride + x * 4;
-            let px = [bytes[i + r_at] as u64, bytes[i + 1] as u64, bytes[i + b_at] as u64];
+            let px = [
+                bytes[i + r_at] as u64,
+                bytes[i + 1] as u64,
+                bytes[i + b_at] as u64,
+            ];
             let bands = [x < band_w, x >= w - band_w, y < band_h, y >= h - band_h];
             for (band, inside) in bands.iter().enumerate() {
                 if *inside {
@@ -125,28 +162,6 @@ pub fn edge_averages(bytes: &[u8], w: usize, h: usize, stride: usize, r_at: usiz
         let n = s[3].max(1);
         [(s[0] / n) as u8, (s[1] / n) as u8, (s[2] / n) as u8]
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::edge_averages;
-
-    #[test]
-    fn edge_bands_average_their_own_side() {
-        // 100x50 bgr0 frame: left half red, right half blue.
-        let (w, h) = (100, 50);
-        let mut frame = vec![0u8; w * h * 4];
-        for y in 0..h {
-            for x in 0..w {
-                let i = (y * w + x) * 4;
-                if x < w / 2 { frame[i + 2] = 255 } else { frame[i] = 255 }
-            }
-        }
-        let [left, right, top, _] = edge_averages(&frame, w, h, w * 4, 2, 0);
-        assert_eq!(left, [255, 0, 0]);
-        assert_eq!(right, [0, 0, 255]);
-        assert!(top[0] > 100 && top[2] > 100);
-    }
 }
 
 impl Mpv {
@@ -176,15 +191,23 @@ impl Mpv {
     }
 
     pub fn command(&self, args: &[String]) -> Result<()> {
-        let Some(first) = args.first() else { bail!("empty mpv command") };
+        let Some(first) = args.first() else {
+            bail!("empty mpv command")
+        };
         if BLOCKED_COMMANDS.contains(&first.as_str()) {
             bail!("mpv command '{first}' is not allowed");
         }
-        let owned = args.iter().map(|a| cstring(a)).collect::<Result<Vec<_>>>()?;
+        let owned = args
+            .iter()
+            .map(|a| cstring(a))
+            .collect::<Result<Vec<_>>>()?;
         let mut ptrs: Vec<*const c_char> = owned.iter().map(|c| c.as_ptr()).collect();
         ptrs.push(ptr::null());
         // SAFETY: NULL-terminated array of C strings that outlive the call.
-        check(unsafe { mpv_command(self.ctx, ptrs.as_mut_ptr()) }, &format!("command {first}"))
+        check(
+            unsafe { mpv_command(self.ctx, ptrs.as_mut_ptr()) },
+            &format!("command {first}"),
+        )
     }
 
     /// Grabs the current video frame (without subtitles) and returns the average colour
@@ -195,7 +218,10 @@ impl Mpv {
         ptrs.push(ptr::null());
         // SAFETY: zeroed node is a valid MPV_FORMAT_NONE node for mpv to fill.
         let mut node: mpv_node = unsafe { std::mem::zeroed() };
-        check(unsafe { mpv_command_ret(self.ctx, ptrs.as_mut_ptr(), &mut node) }, "screenshot-raw")?;
+        check(
+            unsafe { mpv_command_ret(self.ctx, ptrs.as_mut_ptr(), &mut node) },
+            "screenshot-raw",
+        )?;
         // SAFETY: on success mpv filled a node map; it is freed below in every case.
         let result = unsafe { frame_edges(&node) };
         unsafe { mpv_free_node_contents(&mut node) };
@@ -205,7 +231,10 @@ impl Mpv {
     pub fn set(&self, name: &str, value: &str) -> Result<()> {
         let (n, v) = (cstring(name)?, cstring(value)?);
         // SAFETY: valid handle and strings.
-        check(unsafe { mpv_set_property_string(self.ctx, n.as_ptr(), v.as_ptr()) }, &format!("set {name}"))
+        check(
+            unsafe { mpv_set_property_string(self.ctx, n.as_ptr(), v.as_ptr()) },
+            &format!("set {name}"),
+        )
     }
 
     pub fn get(&self, name: &str) -> Option<String> {
@@ -218,7 +247,9 @@ impl Mpv {
         for (i, name) in names.iter().enumerate() {
             let Ok(n) = cstring(name) else { continue };
             // SAFETY: valid handle; mpv copies the name.
-            let code = unsafe { mpv_observe_property(self.ctx, i as u64 + 1, n.as_ptr(), MPV_FORMAT_STRING) };
+            let code = unsafe {
+                mpv_observe_property(self.ctx, i as u64 + 1, n.as_ptr(), MPV_FORMAT_STRING)
+            };
             if let Err(err) = check(code, &format!("observe {name}")) {
                 eprintln!("{err}");
             }
@@ -229,7 +260,12 @@ impl Mpv {
     /// thinned out so the page gets at most one update per `THROTTLE`.
     pub fn spawn_events(self: &Arc<Self>, mut sink: impl FnMut(Event) + Send + 'static) {
         const THROTTLE: Duration = Duration::from_millis(100);
-        const FREQUENT: &[&str] = &["time-pos", "demuxer-cache-time", "estimated-vf-fps", "avsync"];
+        const FREQUENT: &[&str] = &[
+            "time-pos",
+            "demuxer-cache-time",
+            "estimated-vf-fps",
+            "avsync",
+        ];
         let mpv = Arc::clone(self);
         std::thread::Builder::new()
             .name("mpv-events".into())
@@ -246,11 +282,15 @@ impl Mpv {
                         MPV_EVENT_PROPERTY_CHANGE => {
                             // SAFETY: data is an mpv_event_property for this event.
                             let p = unsafe { &*(ev.data as *const mpv_event_property) };
-                            let name = unsafe { CStr::from_ptr(p.name) }.to_string_lossy().into_owned();
+                            let name = unsafe { CStr::from_ptr(p.name) }
+                                .to_string_lossy()
+                                .into_owned();
                             let value = if p.format == MPV_FORMAT_STRING && !p.data.is_null() {
                                 // SAFETY: for MPV_FORMAT_STRING, data points at a char*.
                                 let s = unsafe { *(p.data as *const *const c_char) };
-                                (!s.is_null()).then(|| unsafe { CStr::from_ptr(s) }.to_string_lossy().into_owned())
+                                (!s.is_null()).then(|| {
+                                    unsafe { CStr::from_ptr(s) }.to_string_lossy().into_owned()
+                                })
                             } else {
                                 None
                             };
@@ -278,7 +318,9 @@ impl Mpv {
                                 _ => "other",
                             };
                             let error = (e.reason == MPV_END_FILE_REASON_ERROR).then(|| {
-                                unsafe { CStr::from_ptr(mpv_error_string(e.error)) }.to_string_lossy().into_owned()
+                                unsafe { CStr::from_ptr(mpv_error_string(e.error)) }
+                                    .to_string_lossy()
+                                    .into_owned()
                             });
                             Event::EndFile { reason, error }
                         }
@@ -289,7 +331,10 @@ impl Mpv {
                             // SAFETY: data is an mpv_event_log_message for this event.
                             let m = unsafe { &*(ev.data as *const mpv_event_log_message) };
                             let (prefix, text) = unsafe {
-                                (CStr::from_ptr(m.prefix).to_string_lossy(), CStr::from_ptr(m.text).to_string_lossy())
+                                (
+                                    CStr::from_ptr(m.prefix).to_string_lossy(),
+                                    CStr::from_ptr(m.text).to_string_lossy(),
+                                )
                             };
                             eprint!("[mpv/{prefix}] {text}");
                             continue;
@@ -332,5 +377,31 @@ impl Mpv {
         // SAFETY: pure function.
         let v = unsafe { mpv_client_api_version() } as u32;
         (v >> 16, v & 0xffff)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::edge_averages;
+
+    #[test]
+    fn edge_bands_average_their_own_side() {
+        // 100x50 bgr0 frame: left half red, right half blue.
+        let (w, h) = (100, 50);
+        let mut frame = vec![0u8; w * h * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let i = (y * w + x) * 4;
+                if x < w / 2 {
+                    frame[i + 2] = 255
+                } else {
+                    frame[i] = 255
+                }
+            }
+        }
+        let [left, right, top, _] = edge_averages(&frame, w, h, w * 4, 2, 0);
+        assert_eq!(left, [255, 0, 0]);
+        assert_eq!(right, [0, 0, 255]);
+        assert!(top[0] > 100 && top[2] > 100);
     }
 }

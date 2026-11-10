@@ -18,7 +18,11 @@ pub async fn mpv_command(player: State<'_, Arc<Mpv>>, args: Vec<String>) -> Resu
 }
 
 #[tauri::command]
-pub async fn mpv_set(player: State<'_, Arc<Mpv>>, name: String, value: String) -> Result<(), String> {
+pub async fn mpv_set(
+    player: State<'_, Arc<Mpv>>,
+    name: String,
+    value: String,
+) -> Result<(), String> {
     player.set(&name, &value).map_err(err)
 }
 
@@ -30,20 +34,32 @@ pub async fn mpv_get(player: State<'_, Arc<Mpv>>, name: String) -> Result<Option
 /// Plays the first file now and queues the rest behind it. Saves the position of what
 /// played before, so it resumes there next time.
 #[tauri::command]
-pub async fn open_files(player: State<'_, Arc<Mpv>>, files: Vec<String>, append: bool) -> Result<(), String> {
+pub async fn open_files(
+    player: State<'_, Arc<Mpv>>,
+    files: Vec<String>,
+    append: bool,
+) -> Result<(), String> {
     if !append {
         let _ = player.command(&["write-watch-later-config".into()]);
     }
     for (i, file) in files.iter().enumerate() {
-        let mode = if append || i > 0 { "append-play" } else { "replace" };
-        player.command(&["loadfile".into(), file.clone(), mode.into()]).map_err(err)?;
+        let mode = if append || i > 0 {
+            "append-play"
+        } else {
+            "replace"
+        };
+        player
+            .command(&["loadfile".into(), file.clone(), mode.into()])
+            .map_err(err)?;
     }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn save_position(player: State<'_, Arc<Mpv>>) -> Result<(), String> {
-    player.command(&["write-watch-later-config".into()]).map_err(err)
+    player
+        .command(&["write-watch-later-config".into()])
+        .map_err(err)
 }
 
 #[tauri::command]
@@ -53,7 +69,12 @@ pub fn pending_files(pending: State<'_, Pending>) -> Vec<String> {
 
 /// Streams filmstrip stills for `path` through `channel` as they are rendered.
 #[tauri::command]
-pub async fn filmstrip(path: String, count: usize, width: u32, channel: tauri::ipc::Channel<crate::thumbs::Still>) -> Result<(), String> {
+pub async fn filmstrip(
+    path: String,
+    count: usize,
+    width: u32,
+    channel: tauri::ipc::Channel<crate::thumbs::Still>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         crate::thumbs::filmstrip(&path, count.clamp(1, 40), width.clamp(32, 640), |still| {
             let _ = channel.send(still);
@@ -62,6 +83,85 @@ pub async fn filmstrip(path: String, count: usize, width: u32, channel: tauri::i
     .await
     .map_err(|e| e.to_string())?
     .map_err(err)
+}
+
+/// The intro of a local episode, found by comparing it with its neighbours in the folder.
+#[tauri::command]
+pub async fn detect_intro(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<Option<crate::intro::Intro>, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        let cache = app
+            .try_state::<crate::intro::Cache>()
+            .ok_or("no intro cache")?;
+        cache
+            .detect(std::path::Path::new(&path))
+            .map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    app.path().app_data_dir().map_err(|e| e.to_string())
+}
+
+/// Writes subtitles for a local file with whisper (and Ollama for the translation), streaming
+/// progress through `channel`.
+#[tauri::command]
+pub async fn subtitles_create(
+    app: tauri::AppHandle,
+    path: String,
+    duration: f64,
+    lang: String,
+    channel: tauri::ipc::Channel<crate::subtitles::Progress>,
+) -> Result<(), String> {
+    use tauri::Manager;
+    let base = data_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let jobs = app.state::<crate::subtitles::Jobs>();
+        jobs.run(&base, std::path::Path::new(&path), duration, &lang, |p| {
+            let _ = channel.send(p);
+        });
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn subtitles_cancel(jobs: State<'_, crate::subtitles::Jobs>) {
+    jobs.cancel();
+}
+
+#[tauri::command]
+pub async fn transcript_for(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<Option<crate::subtitles::Transcript>, String> {
+    use tauri::Manager;
+    let base = data_dir(&app)?;
+    Ok(app
+        .state::<crate::subtitles::Jobs>()
+        .find(&base, &path)
+        .map(|mut t| {
+            t.segments.clear();
+            t
+        }))
+}
+
+#[tauri::command]
+pub async fn transcript_search(
+    app: tauri::AppHandle,
+    query: String,
+) -> Result<Vec<crate::subtitles::Hit>, String> {
+    use tauri::Manager;
+    let base = data_dir(&app)?;
+    Ok(app
+        .state::<crate::subtitles::Jobs>()
+        .search(&base, &query, 80))
 }
 
 #[tauri::command]
@@ -80,16 +180,30 @@ pub struct Recent {
 #[tauri::command]
 pub async fn recent_files(app: tauri::AppHandle) -> Result<Vec<Recent>, String> {
     use tauri::Manager;
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("watch_later");
-    let Ok(entries) = std::fs::read_dir(&dir) else { return Ok(Vec::new()) };
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("watch_later");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(Vec::new());
+    };
     let mut out: Vec<Recent> = entries
         .flatten()
         .filter_map(|e| {
-            let saved = e.metadata().ok()?.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
-            parse_watch_later(&std::fs::read_to_string(e.path()).ok()?).map(|(path, start)| Recent { path, start, saved })
+            let saved = e
+                .metadata()
+                .ok()?
+                .modified()
+                .ok()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_secs();
+            parse_watch_later(&std::fs::read_to_string(e.path()).ok()?)
+                .map(|(path, start)| Recent { path, start, saved })
         })
         .collect();
-    out.sort_by(|a, b| b.saved.cmp(&a.saved));
+    out.sort_by_key(|r| std::cmp::Reverse(r.saved));
     out.truncate(24);
     Ok(out)
 }
@@ -98,7 +212,10 @@ pub async fn recent_files(app: tauri::AppHandle) -> Result<Vec<Recent>, String> 
 pub fn parse_watch_later(text: &str) -> Option<(String, f64)> {
     let mut lines = text.lines();
     let path = lines.next()?.strip_prefix("# ")?.to_string();
-    let start = lines.find_map(|l| l.strip_prefix("start=")).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    let start = lines
+        .find_map(|l| l.strip_prefix("start="))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
     Some((path, start))
 }
 
@@ -107,7 +224,9 @@ pub fn parse_watch_later(text: &str) -> Option<(String, f64)> {
 pub fn window_buttons(window: tauri::WebviewWindow, visible: bool) {
     #[cfg(target_os = "macos")]
     {
-        let Ok(ns_window) = window.ns_window() else { return };
+        let Ok(ns_window) = window.ns_window() else {
+            return;
+        };
         let ns_window = ns_window as usize;
         let _ = window.run_on_main_thread(move || {
             use objc2::msg_send;
@@ -135,7 +254,10 @@ mod tests {
     #[test]
     fn watch_later_gives_path_and_start() {
         let text = "# /Users/me/Filme/Kochelsee.mkv\nstart=2472.120000\nsid=1\n";
-        assert_eq!(parse_watch_later(text), Some(("/Users/me/Filme/Kochelsee.mkv".into(), 2472.12)));
+        assert_eq!(
+            parse_watch_later(text),
+            Some(("/Users/me/Filme/Kochelsee.mkv".into(), 2472.12))
+        );
         assert_eq!(parse_watch_later("start=1\n"), None);
     }
 }

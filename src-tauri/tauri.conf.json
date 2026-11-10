@@ -49,13 +49,34 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "app", "dmg"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "targets": [
+      "nsis",
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "publisher": "Wolfgang Linz",
     "copyright": "Copyright 2026 Wolfgang Linz",
     "homepage": "https://wolfgang-linz.de",
     "category": "Video",
     "shortDescription": "A video player that plays everything.",
     "longDescription": "Flimmer plays every video format there is, on Windows and macOS."
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIzNUZGQjdFOUU5NEREMTAKUldRUTNaU2VmdnRmSTlWUjhMbmwwdnhnZ0o4a21qS1VPZUc4Q3ZQOS9TWThhQkxDOGJMSzZ3dUYK",
+      "endpoints": [
+        "https://github.com/wl-lankin/flimmer/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

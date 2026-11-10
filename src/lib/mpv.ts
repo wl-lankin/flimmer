@@ -15,6 +15,12 @@ export const pendingFiles = () => invoke<string[]>('pending_files');
 export const edgeColors = () => invoke<[number, number, number][]>('edge_colors');
 export const recentFiles = () => invoke<{ path: string; start: number; saved: number }[]>('recent_files');
 export const windowButtons = (visible: boolean) => invoke<void>('window_buttons', { visible });
+export const detectIntro = (path: string) => invoke<{ start: number; end: number } | null>('detect_intro', { path });
+export interface TranscriptInfo { path: string; lang: string; srt: string; translated: string | null }
+export interface Hit { path: string; time: number; text: string }
+export const transcriptFor = (path: string) => invoke<TranscriptInfo | null>('transcript_for', { path });
+export const transcriptSearch = (query: string) => invoke<Hit[]>('transcript_search', { query });
+export const subtitlesCancel = () => invoke<void>('subtitles_cancel');
 export const savePosition = () => invoke<void>('save_position');
 
 export function onEvent(handler: (e: MpvEvent) => void): Promise<UnlistenFn> {
