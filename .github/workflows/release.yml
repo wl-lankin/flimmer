@@ -10,7 +10,8 @@
 #
 # createUpdaterArtifacts lives in src-tauri/tauri.updater.conf.json, passed only here, because it
 # makes `tauri build` demand the signing key and source builds have none. libmpv comes from
-# libmpv.yml and is bundled through src-tauri/tauri.libmpv.<os>.conf.json.
+# libmpv.yml and is bundled through src-tauri/tauri.libmpv.<os>.conf.json. Windows binaries and the
+# installer are Authenticode-signed with Azure Artifact Signing (docs/code-signing.md).
 #
 # The installers are attached twice, with the version in the name (tauri-action) and as
 # Flimmer-setup.exe / Flimmer.dmg, so the README can link to releases/latest/download/<name>.
@@ -87,6 +88,8 @@ jobs:
     needs: [prepare, libmpv]
     permissions:
       contents: write
+      id-token: write
+    environment: release
     strategy:
       fail-fast: false
       # One at a time, macOS first: both legs write the same draft and the same latest.json, and
@@ -105,6 +108,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     env:
       TAG: ${{ needs.prepare.outputs.tag }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -131,6 +136,20 @@ jobs:
         run: |
           echo "MPV_LIB_DIR=$GITHUB_WORKSPACE/${{ matrix.dir }}" >> "$GITHUB_ENV"
           if [ -f "${{ matrix.dir }}/libmpv.2.dylib" ]; then ln -sf libmpv.2.dylib "${{ matrix.dir }}/libmpv.dylib"; fi
+
+      # App and installer are signed inside tauri build, so the updater .sig files are made over
+      # the signed installer. libmpv-2.dll is a resource, which Tauri does not sign.
+      - name: Prepare code signing
+        id: signing
+        if: matrix.platform == 'windows-latest'
+        uses: ./.github/actions/windows-signing
+        with:
+          description: Flimmer
+
+      - name: Sign libmpv-2.dll
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: ./.github/actions/windows-signing/sign.ps1 "${{ matrix.dir }}/libmpv-2.dll"
 
       - run: npm ci
 
@@ -161,7 +180,7 @@ jobs:
           prerelease: ${{ contains(env.TAG, '-') }}
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }}${{ steps.signing.outputs.config && format(' --config {0}', steps.signing.outputs.config) || '' }}
 
       # The bundled app must find libmpv in its own Frameworks folder and nowhere else.
       - name: Check the app bundle
@@ -171,6 +190,19 @@ jobs:
           test -f "$app/Contents/Frameworks/libmpv.2.dylib"
           otool -L "$app/Contents/MacOS/flimmer" | grep -q "@rpath/libmpv.2.dylib"
           otool -l "$app/Contents/MacOS/flimmer" | grep -A2 LC_RPATH | grep -q "@executable_path/../Frameworks"
+
+      - name: Check the Windows signatures
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $files = @(Get-Item src-tauri/target/release/flimmer.exe, "${{ matrix.dir }}/libmpv-2.dll") + @(Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe)
+          $bad = 0
+          foreach ($f in $files) {
+            $s = Get-AuthenticodeSignature $f.FullName
+            "{0}: {1} | {2} | timestamp: {3}" -f $f.Name, $s.Status, $s.SignerCertificate.Subject, ($null -ne $s.TimeStamperCertificate)
+            if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'CN=Wolfgang Linz' -or -not $s.TimeStamperCertificate) { $bad++ }
+          }
+          if ($bad) { throw "$bad file(s) not signed correctly" }
 
   assets:
     needs: [prepare, release]
