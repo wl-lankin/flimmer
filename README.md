@@ -4,7 +4,7 @@
 
 <h1 align="center">Flimmer</h1>
 
-<p align="center"><strong>Plays everything. Stays out of the way.</strong></p>
+<p align="center"><strong>Plays everything. Just works.</strong></p>
 
 <p align="center">
   A video player for Windows and macOS, built on mpv.<br>
